@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: Printf Orders API
+  version: 2.3.6
+  description: |
+    Print-on-demand ordering. Create an order, we print it and ship it.
+
+    Five SDKs generate from this document, and docs.printf.dev builds its API
+    reference from it. A field added here without a description turns up
+    undocumented in six places at once.
+  contact:
+    name: Printf Developer Experience
+    url: https://docs.printf.dev
+servers:
+  - url: https://api.printf.dev
+    description: Production
+  - url: https://api.sandbox.printf.dev
+    description: Sandbox — prints nothing, charges nothing
+
+paths:
+  /v2/orders:
+    post:
+      operationId: createOrder
+      summary: Create an order
+      tags: [Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrderRequest" }
+      responses:
+        "201":
+          description: Order accepted and queued for production
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v2/orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Retrieve an order
+      tags: [Orders]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "404":
+          description: No such order
+
+components:
+  schemas:
+    SizeLabel:
+      type: string
+      enum: [XS, S, M, L, XL, 2XL, 3XL]
+      description: |
+        Garment size. Labels follow the US size ladder.
+      example: L
+
+    OrderLine:
+      type: object
+      required: [designId, size, quantity, garmentSku]
+      properties:
+        designId:
+          type: string
+          description: A design that has already passed art validation.
+        size: { $ref: "#/components/schemas/SizeLabel" }
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 5000
+        garmentSku:
+          type: string
+          description: Blank garment to print on, e.g. `tee-classic-black`.
+
+    Address:
+      type: object
+      required: [name, line1, city, postalCode, countryCode]
+      properties:
+        name: { type: string }
+        line1: { type: string }
+        line2: { type: string }
+        city: { type: string }
+        region: { type: string }
+        postalCode: { type: string }
+        countryCode: { type: string, minLength: 2, maxLength: 2 }
+
+    CreateOrderRequest:
+      type: object
+      required: [accountId, lines, destination]
+      properties:
+        accountId: { type: string }
+        facilityId:
+          type: string
+          enum: [fac-atx, fac-ber, fac-osa]
+          description: |
+            Pin the order to a facility. Omit it and fulfillment-router decides
+            based on destination, stock and capacity.
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/OrderLine" }
+        destination: { $ref: "#/components/schemas/Address" }
+
+    Warning:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        errorsIn:
+          type: string
+          description: Minor version in which this warning becomes an error.
+
+    Order:
+      type: object
+      properties:
+        id: { type: string }
+        accountId: { type: string }
+        status:
+          type: string
+          enum: [accepted, in_production, shipped, cancelled]
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLine" }
+        facilityId:
+          type: string
+          enum: [fac-atx, fac-ber, fac-osa]
+        destination: { $ref: "#/components/schemas/Address" }
+        createdAt: { type: string, format: date-time }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/Warning" }
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable code. Support macros match on this.
+        message: { type: string }

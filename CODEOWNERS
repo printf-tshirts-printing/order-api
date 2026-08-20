@@ -1,0 +1,3 @@
+*                       @printf-tshirts-printing/orders
+/openapi.yaml           @printf-tshirts-printing/orders @printf-tshirts-printing/devex
+/src/sizing.ts          @printf-tshirts-printing/orders @printf-tshirts-printing/catalog

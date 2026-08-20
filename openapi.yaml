@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Printf Orders API
-  version: 2.4.0
+  version: 2.3.6
   description: |
     Print-on-demand ordering. Create an order, we print it and ship it.
 
@@ -31,10 +31,6 @@ paths:
       responses:
         "201":
           description: Order accepted and queued for production
-          headers:
-            X-Printf-Size-System:
-              description: The size system every line without an explicit one resolved against.
-              schema: { $ref: "#/components/schemas/SizeSystem" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
@@ -68,46 +64,8 @@ components:
       type: string
       enum: [XS, S, M, L, XL, 2XL, 3XL]
       description: |
-        Garment size label. A label alone does not identify a garment — it is a
-        label *in a system*. See `SizeSystem`.
+        Garment size. Labels follow the US size ladder.
       example: L
-
-    SizeSystem:
-      type: string
-      enum: [US, EU, JP]
-      description: |
-        Which ladder a `size` label is measured against. The same label means
-        different chest measurements in each: a JP `XL` is 97 cm, a US `XL` is
-        112 cm.
-
-        When omitted, the system resolves in this order, first match wins:
-
-        1. `size_system` on the order line
-        2. `size_system` on the order
-        3. the account's configured preference
-        4. the default system of the facility fulfilling the order
-
-        Step 4 depends on routing, not on your payload. Accounts that can route
-        to more than one facility are rejected with `size_system_ambiguous`
-        rather than resolved by guess.
-      example: US
-
-    Fit:
-      type: string
-      enum: [unisex, fitted, relaxed]
-      default: unisex
-      description: Garment cut. Defaults to `unisex`.
-
-    ResolvedSize:
-      type: object
-      description: What will actually be printed, after system resolution.
-      properties:
-        label: { $ref: "#/components/schemas/SizeLabel" }
-        system: { $ref: "#/components/schemas/SizeSystem" }
-        fit: { $ref: "#/components/schemas/Fit" }
-        chest_cm:
-          type: number
-          description: Chest measurement, flat, in centimetres.
 
     OrderLine:
       type: object
@@ -117,15 +75,6 @@ components:
           type: string
           description: A design that has already passed art validation.
         size: { $ref: "#/components/schemas/SizeLabel" }
-        size_system:
-          $ref: "#/components/schemas/SizeSystem"
-        fit:
-          $ref: "#/components/schemas/Fit"
-        resolved_size:
-          allOf:
-            - $ref: "#/components/schemas/ResolvedSize"
-          readOnly: true
-          description: Present on responses only.
         quantity:
           type: integer
           minimum: 1
@@ -151,8 +100,6 @@ components:
       required: [accountId, lines, destination]
       properties:
         accountId: { type: string }
-        size_system:
-          $ref: "#/components/schemas/SizeSystem"
         facilityId:
           type: string
           enum: [fac-atx, fac-ber, fac-osa]
@@ -188,8 +135,6 @@ components:
         facilityId:
           type: string
           enum: [fac-atx, fac-ber, fac-osa]
-        size_system:
-          $ref: "#/components/schemas/SizeSystem"
         destination: { $ref: "#/components/schemas/Address" }
         createdAt: { type: string, format: date-time }
         warnings:

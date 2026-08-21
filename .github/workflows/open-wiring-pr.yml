@@ -62,9 +62,30 @@ jobs:
           python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$FILE_PATH"
           echo "wrote and validated $FILE_PATH"
 
+      # GITHUB_TOKEN is not allowed to create or change anything under
+      # .github/workflows/ — GitHub refuses the push with "without `workflows`
+      # permission", and no `permissions:` block can grant it. That is a
+      # deliberate control: a job that can rewrite workflows can rewrite its own
+      # permissions. Wiring a pipeline therefore needs a token that a human
+      # deliberately handed over, which is the correct amount of friction.
+      - name: Check the platform token is present
+        env:
+          PLATFORM_TOKEN: ${{ secrets.PLATFORM_PAT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$PLATFORM_TOKEN" ]]; then
+            echo "PLATFORM_PAT is not set on this repository or its organisation." >&2
+            echo "" >&2
+            echo "GITHUB_TOKEN cannot write .github/workflows/. Create a token with the" >&2
+            echo "workflow scope and add it as a secret named PLATFORM_PAT:" >&2
+            echo "  Fine-grained PAT -> Repository permissions -> Workflows: Read and write" >&2
+            echo "  Classic PAT      -> scope: workflow" >&2
+            exit 1
+          fi
+
       - name: Commit and open the pull request
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PLATFORM_PAT }}
           FILE_PATH: ${{ inputs.path }}
           PR_TITLE: ${{ inputs.pr_title }}
           PR_BODY: ${{ inputs.pr_body }}
@@ -82,7 +103,9 @@ jobs:
           fi
 
           git commit -m "ci: $PR_TITLE"
-          git push origin "$branch"
+
+          # Push over the token that is allowed to carry workflow files.
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
 
           printf '%s' "$PR_BODY" > /tmp/pr-body.md
           gh pr create \

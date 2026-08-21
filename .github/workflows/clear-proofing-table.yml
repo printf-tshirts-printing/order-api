@@ -1,0 +1,63 @@
+name: Clear the proofing table
+
+# Dispatched by the Port workflow `clear_proofing_table`. Wiring proofs
+# pile up the same way documentation proofs do: Port opens one, someone reads
+# it, and if it never lands it sits on the table blocking the next one.
+#
+# This closes every open proof and sweeps up the `platform/` branches behind them.
+# It runs here rather than on a writer's laptop because closing a pull request
+# needs write access to this repository, and the person clearing the table
+# usually has neither that nor a checkout.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Recorded on each proof as it is closed
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  clear:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close open proofs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          set -euo pipefail
+          open="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --json number --jq '.[].number')"
+          if [[ -z "$open" ]]; then
+            echo "no proofs on the table"
+          else
+            while read -r number; do
+              gh pr close "$number" --repo "$GITHUB_REPOSITORY" \
+                --comment "$REASON" --delete-branch
+              echo "closed #$number"
+            done <<<"$open"
+          fi
+
+      - name: Sweep leftover proof branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Selected with a case rather than grep: grep exits 1 on no match, and
+          # every way to tolerate that swallows real errors too.
+          swept=0
+          while read -r branch; do
+            case "$branch" in
+              platform/*)
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" --silent
+                echo "swept $branch"
+                swept=$(( swept + 1 ))
+                ;;
+            esac
+          done < <(gh api "repos/$GITHUB_REPOSITORY/branches" --paginate --jq '.[].name')
+
+          if (( swept == 0 )); then
+            echo "no branches left over"
+          fi

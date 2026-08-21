@@ -1,0 +1,92 @@
+name: Open a platform wiring PR
+
+# Dispatched by the Port workflow `wire_release_registration`.
+#
+# Port works out what this repository is missing and what the file should say;
+# this job is the hands. It writes one workflow file and opens a pull request
+# for it. It does not merge, because a change to a repository's CI is a change
+# somebody who owns that repository should read first.
+#
+# Inputs arrive through `env:` and are never interpolated into the shell with
+# ${{ }} — the file body is YAML full of quotes, braces and dollar signs, and
+# splicing that into bash is a syntax error on a good day.
+on:
+  workflow_dispatch:
+    inputs:
+      path:
+        description: Repository-relative path of the workflow file to write
+        required: true
+      content:
+        description: The file body
+        required: true
+      pr_title:
+        description: Title for the pull request
+        required: true
+      pr_body:
+        description: Body for the pull request
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write the file
+        env:
+          FILE_PATH: ${{ inputs.path }}
+          CONTENT: ${{ inputs.content }}
+        run: |
+          set -euo pipefail
+
+          # A dispatched job that can write anywhere in the repo is a dispatched
+          # job that can rewrite its own permissions. Confine it.
+          case "$FILE_PATH" in
+            .github/workflows/*.yml|.github/workflows/*.yaml) ;;
+            *) echo "refusing to write outside .github/workflows/: $FILE_PATH" >&2; exit 1 ;;
+          esac
+          case "$FILE_PATH" in
+            *..*) echo "refusing path traversal: $FILE_PATH" >&2; exit 1 ;;
+          esac
+
+          mkdir -p "$(dirname "$FILE_PATH")"
+          printf '%s' "$CONTENT" > "$FILE_PATH"
+
+          # Never open a pull request adding a workflow that cannot parse. A
+          # broken file here is worse than no file: Actions reports it against
+          # every future run in the repository, not against this one.
+          python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$FILE_PATH"
+          echo "wrote and validated $FILE_PATH"
+
+      - name: Commit and open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILE_PATH: ${{ inputs.path }}
+          PR_TITLE: ${{ inputs.pr_title }}
+          PR_BODY: ${{ inputs.pr_body }}
+        run: |
+          set -euo pipefail
+          branch="platform/wire-${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git config user.name "port-platform-bot"
+          git config user.email "platform-bot@printf.dev"
+          git add -- "$FILE_PATH"
+
+          if git diff --cached --quiet; then
+            echo "$FILE_PATH is already exactly this — nothing to wire" >&2
+            exit 1
+          fi
+
+          git commit -m "ci: $PR_TITLE"
+          git push origin "$branch"
+
+          printf '%s' "$PR_BODY" > /tmp/pr-body.md
+          gh pr create \
+            --title "$PR_TITLE" \
+            --body-file /tmp/pr-body.md \
+            --base main \
+            --head "$branch"

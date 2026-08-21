@@ -61,3 +61,19 @@ jobs:
           if (( swept == 0 )); then
             echo "no branches left over"
           fi
+
+      - name: Unpublish the demo release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Act 1 publishes v2.4.0 for real, because a GitHub release the room
+          # watched being cut is worth more than a curl they have to take on
+          # trust. It has to be gone again before the next run, tag included —
+          # a leftover tag makes the next publish silently a no-op.
+          if gh release view v2.4.0 --repo "$GITHUB_REPOSITORY" > /dev/null; then
+            gh release delete v2.4.0 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+            echo "unpublished v2.4.0"
+          else
+            echo "v2.4.0 not published"
+          fi

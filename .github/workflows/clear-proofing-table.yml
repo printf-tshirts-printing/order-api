@@ -77,3 +77,22 @@ jobs:
           else
             echo "v2.4.0 not published"
           fi
+
+      - name: Close the post-mortem action items
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Act 0 opens the post-mortem issue live. Leaving it open means the
+          # next run starts with the plot already resolved, and the continuous
+          # improvement workflow fires on a stale item before anybody is looking.
+          open="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --json number --jq '.[].number')"
+          if [[ -z "$open" ]]; then
+            echo "no open issues"
+          else
+            while read -r number; do
+              gh issue close "$number" --repo "$GITHUB_REPOSITORY" --reason "not planned"
+              echo "closed issue #$number"
+            done <<<"$open"
+          fi
+
